@@ -1,0 +1,102 @@
+{
+  "name": "baleen",
+  "displayName": "Baleen",
+  "description": "Filter your AI agent's code changes before they surface. A whale of a review tool.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "baleen.start",
+        "title": "Baleen: Start Session"
+      },
+      {
+        "command": "baleen.stop",
+        "title": "Baleen: Stop Session"
+      },
+      {
+        "command": "baleen.reviewFile",
+        "title": "Baleen: Review Current File"
+      },
+      {
+        "command": "baleen.addComment",
+        "title": "Add Comment"
+      },
+      {
+        "command": "baleen.approve",
+        "title": "Approve",
+        "icon": "$(check)"
+      },
+      {
+        "command": "baleen.deny",
+        "title": "Deny",
+        "icon": "$(close)"
+      }
+    ],
+    "configuration": {
+      "title": "Baleen",
+      "properties": {
+        "baleen.dockerImage": {
+          "type": "string",
+          "default": "baleen-sandbox",
+          "description": "Docker image to use for sandbox containers."
+        },
+        "baleen.autoApprovePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Glob patterns matched against relative file paths to auto-approve without review (e.g. '*.md', 'docs/**', 'tests/**')."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "baleen.approve",
+          "group": "navigation",
+          "when": "baleen.hasActiveReview"
+        },
+        {
+          "command": "baleen.deny",
+          "group": "navigation",
+          "when": "baleen.hasActiveReview"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "baleen.addComment",
+          "group": "inline",
+          "when": "commentController == baleen"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "pretest": "tsc -p ./",
+    "test": "vscode-test",
+    "package": "vsce package --allow-missing-repository",
+    "deploy": "bun run lint && bun run compile && bun run package && mv baleen-*.vsix builds/ && code --install-extension builds/baleen-*.vsix --force"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.6",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.5.0"
+  }
+}

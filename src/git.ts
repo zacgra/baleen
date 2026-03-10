@@ -1,0 +1,53 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import * as vscode from 'vscode';
+
+const execFileAsync = promisify(execFile);
+
+export interface GitResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/**
+ * Run a git command in the given working directory.
+ */
+export async function execGit(args: string[], cwd: string): Promise<GitResult> {
+  try {
+    const { stdout, stderr } = await execFileAsync('git', args, { cwd });
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; code?: number };
+    return {
+      stdout: e.stdout ?? '',
+      stderr: e.stderr ?? '',
+      exitCode: e.code ?? 1,
+    };
+  }
+}
+
+/**
+ * Get file contents at HEAD.
+ */
+export async function getFileAtHead(relativePath: string, cwd: string): Promise<string | null> {
+  const result = await execGit(['show', `HEAD:${relativePath}`], cwd);
+  if (result.exitCode !== 0) return null;
+  return result.stdout;
+}
+
+/**
+ * Content provider for git HEAD file versions.
+ * Registers a `git-head:` URI scheme that resolves file contents from HEAD.
+ */
+export class GitHeadContentProvider implements vscode.TextDocumentContentProvider {
+  async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    const relativePath = uri.path;
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders?.length) return '';
+
+    const cwd = workspaceFolders[0].uri.fsPath;
+    const content = await getFileAtHead(relativePath, cwd);
+    return content ?? '';
+  }
+}

@@ -1,0 +1,12 @@
+src/**
+.vscode-test/**
+.vscode-test.mjs
+tsconfig.json
+biome.json
+bun.lock
+**/*.test.js
+**/*.test.ts
+.gitignore
+HANDOFF.md
+uat.sh
+.llmbox/
