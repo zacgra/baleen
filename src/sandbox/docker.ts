@@ -58,6 +58,12 @@ export function buildRunArgs(
     '-v',
     'baleen-auth:/home/baleen/.claude',
 
+    // PulseAudio over TCP for voice mode (macOS host)
+    '-e',
+    'PULSE_SERVER=tcp:host.docker.internal:4713',
+    '-e',
+    'AUDIODRIVER=pulseaudio',
+
     // No privilege escalation
     '--security-opt=no-new-privileges',
   ];

@@ -18,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   procps \
   unzip \
   sqlite3 \
+  sox \
+  libsox-fmt-pulse \
+  pulseaudio-utils \
   && rm -rf /var/lib/apt/lists/* \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
