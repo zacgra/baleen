@@ -1,35 +1,41 @@
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { ReviewCommentController } from './comments';
+import { addWorktree, deleteBranch, removeWorktree } from './git';
 import { ReviewHandler } from './review-handler';
 import { buildRunArgs, DockerProvider, ensureImage } from './sandbox/docker';
 
-/** A single container session (terminal + container). */
 interface BaleenSession {
   terminal: vscode.Terminal;
   containerName: string;
+  worktreePath: string;
+  branchName: string;
+  reviewHandler: ReviewHandler;
 }
 
-/** Manages multiple concurrent Baleen sessions with a shared ReviewHandler. */
 export class SessionManager {
   private readonly sessions = new Map<string, BaleenSession>();
   private readonly docker = new DockerProvider();
-  private reviewHandler: ReviewHandler | undefined;
   private sessionCounter = 0;
   private terminalListener: vscode.Disposable | undefined;
+  private readonly _onDidChangeReview = new vscode.EventEmitter<boolean>();
+  readonly onDidChangeReview = this._onDidChangeReview.event;
 
   constructor(
     private readonly extensionContext: vscode.ExtensionContext,
     private readonly commentController: ReviewCommentController,
   ) {}
 
+  private get projectDir(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
   async start(): Promise<void> {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders?.length) {
+    const projectDir = this.projectDir;
+    if (!projectDir) {
       vscode.window.showErrorMessage('Open a workspace folder first.');
       return;
     }
-
-    const projectDir = workspaceFolders[0].uri.fsPath;
 
     const available = await this.docker.isAvailable();
     if (!available) {
@@ -39,34 +45,39 @@ export class SessionManager {
 
     await ensureImage(undefined, this.extensionContext.extensionPath);
 
-    // Start the shared ReviewHandler on first session
-    if (!this.reviewHandler) {
-      this.reviewHandler = new ReviewHandler(projectDir, this.commentController);
-      await this.reviewHandler.writeHookConfig();
-      await this.reviewHandler.writeContainerSettings();
-      await this.reviewHandler.start();
+    this.sessionCounter++;
+    const containerName = `baleen-${Date.now()}`;
+    const branchName = `baleen/session-${this.sessionCounter}-${Date.now()}`;
+    const worktreePath = join(projectDir, '.worktrees', `baleen-${this.sessionCounter}`);
 
-      // Listen for terminal closures to clean up sessions
+    await addWorktree(projectDir, worktreePath, branchName);
+
+    const reviewHandler = new ReviewHandler(worktreePath, this.commentController);
+    reviewHandler.onDidChangeReview((review) => {
+      this._onDidChangeReview.fire(!!review);
+    });
+    await reviewHandler.writeHookConfig();
+    await reviewHandler.writeContainerSettings();
+    await reviewHandler.start();
+
+    // Listen for terminal closures on first session
+    if (!this.terminalListener) {
       this.terminalListener = vscode.window.onDidCloseTerminal((closed) => {
         for (const [name, s] of this.sessions) {
           if (s.terminal === closed) {
+            this.teardownSession(s);
             this.sessions.delete(name);
             break;
           }
         }
         if (this.sessions.size === 0) {
-          this.reviewHandler?.stop();
-          this.reviewHandler = undefined;
           this.terminalListener?.dispose();
           this.terminalListener = undefined;
         }
       });
     }
 
-    this.sessionCounter++;
-    const containerName = `baleen-${Date.now()}`;
-
-    const args = buildRunArgs(containerName, { projectDir });
+    const args = buildRunArgs(containerName, { projectDir: worktreePath });
     const cmd = ['docker', ...args].map(shellEscape).join(' ');
 
     const label = this.sessionCounter === 1 ? 'Baleen' : `Baleen (${this.sessionCounter})`;
@@ -74,9 +85,13 @@ export class SessionManager {
     terminal.show();
     terminal.sendText(`clear && ${cmd}`);
 
-    const session: BaleenSession = { terminal, containerName };
-
-    this.sessions.set(containerName, session);
+    this.sessions.set(containerName, {
+      terminal,
+      containerName,
+      worktreePath,
+      branchName,
+      reviewHandler,
+    });
   }
 
   async stop(): Promise<void> {
@@ -92,6 +107,7 @@ export class SessionManager {
     } else {
       const items = [...this.sessions.entries()].map(([name, s]) => ({
         label: s.terminal.name,
+        detail: s.branchName,
         containerName: name,
       }));
       const pick = await vscode.window.showQuickPick(items, {
@@ -105,37 +121,48 @@ export class SessionManager {
       this.sessions.delete(target.containerName);
       await this.docker.killContainer(target.containerName);
       target.terminal.dispose();
+      await this.teardownSession(target);
     }
 
     if (this.sessions.size === 0) {
-      this.reviewHandler?.stop();
-      await this.reviewHandler?.cleanup();
-      this.reviewHandler = undefined;
       this.terminalListener?.dispose();
       this.terminalListener = undefined;
     }
   }
 
   async stopAll(): Promise<void> {
-    const stops = [...this.sessions.values()].map((s) => {
+    const teardowns = [...this.sessions.values()].map(async (s) => {
       s.terminal.dispose();
-      return this.docker.killContainer(s.containerName);
+      await this.docker.killContainer(s.containerName);
+      await this.teardownSession(s);
     });
-    await Promise.all(stops);
+    await Promise.all(teardowns);
     this.sessions.clear();
-    this.reviewHandler?.stop();
-    await this.reviewHandler?.cleanup();
-    this.reviewHandler = undefined;
     this.terminalListener?.dispose();
     this.terminalListener = undefined;
   }
 
-  get hasRunningSessions(): boolean {
-    return this.sessions.size > 0;
+  private async teardownSession(session: BaleenSession): Promise<void> {
+    session.reviewHandler.stop();
+    await session.reviewHandler.cleanup();
+
+    const projectDir = this.projectDir;
+    if (projectDir) {
+      await removeWorktree(projectDir, session.worktreePath);
+      await deleteBranch(projectDir, session.branchName);
+    }
   }
 
+  /** Return the ReviewHandler for the currently-active review (if any). */
   get review(): ReviewHandler | undefined {
-    return this.reviewHandler;
+    for (const s of this.sessions.values()) {
+      if (s.reviewHandler.hasActiveReview) return s.reviewHandler;
+    }
+    return undefined;
+  }
+
+  get hasRunningSessions(): boolean {
+    return this.sessions.size > 0;
   }
 
   get sessionCount(): number {

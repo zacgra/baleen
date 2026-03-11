@@ -27,9 +27,29 @@ export async function execGit(args: string[], cwd: string): Promise<GitResult> {
   }
 }
 
-/**
- * Get file contents at HEAD.
- */
+export async function currentBranch(cwd: string): Promise<string> {
+  const result = await execGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+  if (result.exitCode !== 0) throw new Error(`Failed to get current branch: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+export async function addWorktree(
+  repoDir: string,
+  worktreePath: string,
+  branch: string,
+): Promise<void> {
+  const result = await execGit(['worktree', 'add', '-b', branch, worktreePath], repoDir);
+  if (result.exitCode !== 0) throw new Error(`git worktree add failed: ${result.stderr}`);
+}
+
+export async function removeWorktree(repoDir: string, worktreePath: string): Promise<void> {
+  await execGit(['worktree', 'remove', '--force', worktreePath], repoDir);
+}
+
+export async function deleteBranch(repoDir: string, branch: string): Promise<void> {
+  await execGit(['branch', '-D', branch], repoDir);
+}
+
 export async function getFileAtHead(relativePath: string, cwd: string): Promise<string | null> {
   const result = await execGit(['show', `HEAD:${relativePath}`], cwd);
   if (result.exitCode !== 0) return null;

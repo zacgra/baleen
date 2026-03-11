@@ -19,14 +19,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('baleen.start', async () => {
+      // Subscribe once — SessionManager bubbles up events from all session handlers
+      if (!reviewListener) {
+        reviewListener = manager?.onDidChangeReview((hasReview) => {
+          vscode.commands.executeCommand('setContext', 'baleen.hasActiveReview', hasReview);
+        });
+      }
       await manager?.start();
-
-      // Track active review state for button visibility (re-subscribe on each start
-      // since the ReviewHandler may be newly created)
-      reviewListener?.dispose();
-      reviewListener = manager?.review?.onDidChangeReview((review) => {
-        vscode.commands.executeCommand('setContext', 'baleen.hasActiveReview', !!review);
-      });
     }),
 
     vscode.commands.registerCommand('baleen.stop', async () => {
