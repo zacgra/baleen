@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { ReviewCommentController } from './comments';
@@ -46,7 +46,6 @@ export class ReviewHandler {
   private afterProvider: vscode.Disposable | undefined;
   private activeReview: ActiveReview | undefined;
   private readonly pendingQueue: ReviewProposal[] = [];
-  private timeoutCheckInterval: ReturnType<typeof setInterval> | undefined;
   private readonly _onDidChangeReview = new vscode.EventEmitter<ActiveReview | undefined>();
   readonly onDidChangeReview = this._onDidChangeReview.event;
 

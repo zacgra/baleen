@@ -48,12 +48,12 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('baleen.approve', async () => {
-      await manager?.review?.approve();
+      await (await manager?.activeReview())?.approve();
       vscode.commands.executeCommand('setContext', 'baleen.hasActiveReview', false);
     }),
 
     vscode.commands.registerCommand('baleen.deny', async () => {
-      await manager?.review?.deny();
+      await (await manager?.activeReview())?.deny();
       vscode.commands.executeCommand('setContext', 'baleen.hasActiveReview', false);
     }),
   );

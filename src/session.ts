@@ -1,15 +1,11 @@
-import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { ReviewCommentController } from './comments';
-import { addWorktree, deleteBranch, removeWorktree } from './git';
 import { ReviewHandler } from './review-handler';
 import { buildRunArgs, DockerProvider, ensureImage } from './sandbox/docker';
 
 interface BaleenSession {
   terminal: vscode.Terminal;
   containerName: string;
-  worktreePath: string;
-  branchName: string;
   reviewHandler: ReviewHandler;
 }
 
@@ -47,12 +43,8 @@ export class SessionManager {
 
     this.sessionCounter++;
     const containerName = `baleen-${Date.now()}`;
-    const branchName = `baleen/session-${this.sessionCounter}-${Date.now()}`;
-    const worktreePath = join(projectDir, '.worktrees', `baleen-${this.sessionCounter}`);
 
-    await addWorktree(projectDir, worktreePath, branchName);
-
-    const reviewHandler = new ReviewHandler(worktreePath, this.commentController);
+    const reviewHandler = new ReviewHandler(projectDir, this.commentController);
     reviewHandler.onDidChangeReview((review) => {
       this._onDidChangeReview.fire(!!review);
     });
@@ -77,7 +69,7 @@ export class SessionManager {
       });
     }
 
-    const args = buildRunArgs(containerName, { projectDir: worktreePath });
+    const args = buildRunArgs(containerName, { projectDir: projectDir });
     const cmd = ['docker', ...args].map(shellEscape).join(' ');
 
     const label = this.sessionCounter === 1 ? 'Baleen' : `Baleen (${this.sessionCounter})`;
@@ -88,8 +80,6 @@ export class SessionManager {
     this.sessions.set(containerName, {
       terminal,
       containerName,
-      worktreePath,
-      branchName,
       reviewHandler,
     });
   }
@@ -107,7 +97,6 @@ export class SessionManager {
     } else {
       const items = [...this.sessions.entries()].map(([name, s]) => ({
         label: s.terminal.name,
-        detail: s.branchName,
         containerName: name,
       }));
       const pick = await vscode.window.showQuickPick(items, {
@@ -145,20 +134,20 @@ export class SessionManager {
   private async teardownSession(session: BaleenSession): Promise<void> {
     session.reviewHandler.stop();
     await session.reviewHandler.cleanup();
-
-    const projectDir = this.projectDir;
-    if (projectDir) {
-      await removeWorktree(projectDir, session.worktreePath);
-      await deleteBranch(projectDir, session.branchName);
-    }
   }
 
-  /** Return the ReviewHandler for the currently-active review (if any). */
-  get review(): ReviewHandler | undefined {
-    for (const s of this.sessions.values()) {
-      if (s.reviewHandler.hasActiveReview) return s.reviewHandler;
-    }
-    return undefined;
+  /** Return the ReviewHandler for the currently-active review, prompting if multiple exist. */
+  async activeReview(): Promise<ReviewHandler | undefined> {
+    const active = [...this.sessions.values()].filter((s) => s.reviewHandler.hasActiveReview);
+    if (active.length === 0) return undefined;
+    if (active.length === 1) return active[0].reviewHandler;
+
+    const pick = await vscode.window.showQuickPick(
+      active.map((s) => ({ label: s.terminal.name, containerName: s.containerName })),
+      { placeHolder: 'Multiple active reviews — select a session' },
+    );
+    if (!pick) return undefined;
+    return this.sessions.get(pick.containerName)?.reviewHandler;
   }
 
   get hasRunningSessions(): boolean {
