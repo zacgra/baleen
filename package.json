@@ -6,7 +6,9 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -86,7 +88,7 @@
     "pretest": "tsc -p ./",
     "test": "vscode-test",
     "package": "vsce package --allow-missing-repository",
-    "deploy": "bun run lint && bun run compile && bun run package && mv baleen-*.vsix builds/ && code --install-extension builds/baleen-*.vsix --force"
+    "deploy": "bun run lint && bun run compile && bun run package && code --install-extension baleen-*.vsix --force"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
