@@ -11,6 +11,32 @@ Baleen is a VS Code extension that runs Claude Code inside a Docker sandbox and 
 3. **Diff preview** — The extension picks up the proposal, constructs before/after content, and opens a VS Code diff editor.
 4. **Approve or deny** — Toolbar buttons write a response to `.claude-review/responses/`, unblocking the hook. On deny, any inline comments you added are compiled into structured feedback for Claude.
 
+## Messaging
+
+The hook and extension communicate through the filesystem using a simple request/response protocol via `.claude-review/`:
+
+```
+pending/          Extension watches for new files (proposals)
+  └─ {id}.json    Written by hook → read by extension
+responses/        Hook polls for response files
+  └─ {id}.json    Written by extension → read by hook
+```
+
+**Flow:**
+
+1. The hook writes a proposal to `pending/{tool_use_id}.json` containing the tool name and input (file path, old/new strings).
+2. The extension's `FileSystemWatcher` picks up the new file, parses it, and opens a diff view.
+3. The user clicks Approve or Deny. The extension writes a response to `responses/{tool_use_id}.json` with `{"action": "approve"}` or `{"action": "deny", "feedback": "..."}`.
+4. The hook (polling every 100ms) reads the response, cleans up both files, and exits with structured JSON that tells Claude Code to allow or deny the tool call.
+
+**Timeout handling:**
+
+The hook enforces a 5-minute timeout. If no response arrives, the hook deletes its pending file and auto-denies. The extension watches for pending file deletions — when a file is removed without the extension having written a response, it knows the hook timed out and clears the stale review so the queue can continue processing.
+
+**Queuing:**
+
+Only one diff review can be active at a time. If a new proposal arrives while a review is already showing, it is added to a FIFO queue. When the active review is resolved (approved, denied, or timed out), the next queued proposal is automatically shown.
+
 ## Commands
 
 | Command | Description |

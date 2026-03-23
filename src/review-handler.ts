@@ -82,8 +82,9 @@ export class ReviewHandler {
     );
 
     const pattern = new vscode.RelativePattern(this.pendingDir, '*.json');
-    this.watcher = vscode.workspace.createFileSystemWatcher(pattern, false, true, true);
+    this.watcher = vscode.workspace.createFileSystemWatcher(pattern, false, true, false);
     this.watcher.onDidCreate((uri) => this.onProposalCreated(uri), undefined, this.disposables);
+    this.watcher.onDidDelete((uri) => this.onProposalDeleted(uri), undefined, this.disposables);
     this.disposables.push(this.watcher);
   }
 
@@ -99,6 +100,25 @@ export class ReviewHandler {
     }
     this.disposables.length = 0;
     this.watcher = undefined;
+  }
+
+  private async onProposalDeleted(uri: vscode.Uri): Promise<void> {
+    // Extract tool_use_id from filename (e.g. "abc123.json" → "abc123")
+    const filename = uri.fsPath.split('/').pop() ?? '';
+    const toolUseId = filename.replace(/\.json$/, '');
+
+    // If the deleted file corresponds to the active review, the hook timed out —
+    // clear the stale review so the queue can proceed.
+    if (this.activeReview && this.activeReview.proposal.tool_use_id === toolUseId) {
+      await this.clearReview();
+      return;
+    }
+
+    // Also remove from the pending queue if it was queued
+    const idx = this.pendingQueue.findIndex((p) => p.tool_use_id === toolUseId);
+    if (idx !== -1) {
+      this.pendingQueue.splice(idx, 1);
+    }
   }
 
   private async onProposalCreated(uri: vscode.Uri): Promise<void> {
